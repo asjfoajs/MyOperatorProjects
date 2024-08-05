@@ -18,13 +18,19 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	appsv1 "github.com/asjfoajs/MyOperatorProjects/application-operator/api/v1"
+	dappsv1 "github.com/asjfoajs/MyOperatorProjects/application-operator/api/v1"
 )
 
 // ApplicationReconciler reconciles a Application object
@@ -47,16 +53,51 @@ type ApplicationReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	l := log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	//get the Application
+	//声明一个*Application类型的实例app用来接收我们的CR
+	app := &dappsv1.Application{}
+	//NamespacedName在这里也就是default/application-sample
+	if err := r.Get(ctx, req.NamespacedName, app); err != nil {
+		//err分很多中情况，如果找不到，一般不需要进一步处理，只是说明这个CR被删了而已
+		if errors.IsNotFound(err) {
+			l.Info("Application resource not found. Ignoring since object must be deleted")
+			//直接返回，不带错误，结束本次调谐
+			return ctrl.Result{}, nil
+		}
+		//除了NotFound之外的错误，比如连不上apiserver等，这时需要打印错误信息，然后返回这个
+		//错误以及表示1分钟后重试的Result
+		l.Error(err, "Failed to get Application")
+		return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
+	}
 
+	//create pods
+	for i := 0; i < int(app.Spec.Replicas); i++ {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      app.Name + "-" + strconv.Itoa(i),
+				Namespace: app.Namespace,
+				Labels:    app.Labels,
+			},
+			Spec: app.Spec.Teplate.Spec,
+		}
+
+		if err := r.Create(ctx, pod); err != nil {
+			l.Error(err, "Failed to create pod")
+			return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
+		}
+
+		l.Info(fmt.Sprintf("the Pod (%s) has created", pod.Name))
+	}
+
+	l.Info("all pods has created")
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv1.Application{}).
+		For(&dappsv1.Application{}).
 		Complete(r)
 }
