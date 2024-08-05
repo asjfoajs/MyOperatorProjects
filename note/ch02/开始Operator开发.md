@@ -6,7 +6,7 @@
 
 思考一下夏天空调制冷时的工作流程:
 
-<img title="" src="file:///home/hyj/.config/marktext/images/2024-08-03-09-43-10-image.png" alt="" width="358" data-align="center">
+<img title="" src="../images/2024-08-03-09-43-10-image.png" alt="" width="358" data-align="center">
 
 空调制冷过程如下：
 
@@ -26,7 +26,7 @@ Kubernetes中通过“声明式API”定义了一系列的“资源对象”​�
 
 我们知道在Kubernetes的控制面组件中有一个kube-controller-manager，这个组件就是Kubernetes中的“资源大管家”​，也就是一系列的“控制器集合”​。我们以一个Deployment的创建过程为例，分析一下其中涉及的主要控制器及其工作过程
 
-<img title="" src="file:///home/hyj/.config/marktext/images/2024-08-03-16-36-55-image.png" alt="" width="428" data-align="center">
+<img title="" src="../images/2024-08-03-16-36-55-image.png" alt="" width="428" data-align="center">
 
 在编辑好一个Deployment的YAML配置文件，执行kubectl apply-f ×××-deployment.yaml命令之后，这个资源就被提交到了kube-apiserver。接着kube-controller-manager中的Deployment控制器会收到消息，然后根据Deployment资源的spec定义创建相应的ReplicaSet资源，同样提交给kube-apiserver。紧接着kube-controller-manager中的ReplicaSet控制器又会收到ReplicaSet资源创建的消息，于是根据ReplicaSet资源的spec定义创建相应的Pod资源。最后就是调度器完成Pod的节点绑定，至此Kubelet就完成了对应节点上的Pod创建。
 
@@ -76,7 +76,7 @@ Kubebuilder是一个用于Operator程序构建和发布的工具。可以直接�
 
 我们要通过一个Application类型来定义一个自己的资源对象，然后在控制器中获取这个资源对象的详细配置，接着根据它的配置去创建相应数量的Pod，就像Deployment那样工作。当然，为了避免Demo项目过于复杂，这里不去考虑过多的异常处理、程序健壮性、业务逻辑完备等。
 
-<img title="" src="file:///home/hyj/.config/marktext/images/2024-08-03-21-43-52-image.png" alt="" width="237" data-align="center">
+<img title="" src="../images/2024-08-03-21-43-52-image.png" alt="" width="237" data-align="center">
 
 ## 4.1 创建项目
 
