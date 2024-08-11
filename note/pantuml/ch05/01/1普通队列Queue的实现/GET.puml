@@ -1,0 +1,88 @@
+@startuml
+
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title Queue.Get()方法的实现
+
+skinparam ConditionEndStyle diamond
+
+
+start
+group Get()
+while (如果q.queue为空，并且没有正在关闭\nq.queue.Len() == 0 && !q.shuttingDown) is (是)
+:则等待下一个元素的到来 \n\t   q.cond.Wait;
+endwhile (否)
+if (这时如果q.queue长度还是0，\n则说明q.shuttingDown为true\n\t   q.queue.Len() == 0) then (是)
+    :\t所以直接返回\nreturn *new(T), true;
+
+else (否)
+    :获取q.queue中的第一个元素\n\titem = q.queue.Pop();
+    group Pop() #4682B4
+        :获取q.queue第一个元素\n\titem = (*q)[0];
+        :这里的nil复制是为了让底层数组不再\n引用元素对象，从而能够实现垃圾回收\n\t\t(*q)[0] = *new(T);
+        :更新q.queue\n*q = (*q)[1:];
+        :return item;
+    end group
+    :刚才获取到的q.queue第一个元素放到processing集合中\n\t\t\tq.processing.insert(item);
+    :在dirty集合中删除该元素 \n    q.dirty.delete(item);
+    :\t返回元素\nreturn item, false;
+endif
+end group
+'group Pop()
+'    :获取q.queue第一个元素\n\titem = (*q)[0];
+'    :这里的nil复制是为了让底层数组不再\n引用元素对象，从而能够实现垃圾回收\n\t\t(*q)[0] = *new(T);
+'    :更新q.queue\n*q = (*q)[1:];
+'    :return item;
+'end group
+stop
+'partition "queue.Pop"{
+'    :获取q.queue第一个元素\n\titem = (*q)[0];
+'    :这里的nil复制是为了让底层数组不再\n引用元素对象，从而能够实现垃圾回收\n\t\t(*q)[0] = *new(T);
+'    :更新q.queue\n*q = (*q)[1:];
+'    :return item;
+'}
+@enduml

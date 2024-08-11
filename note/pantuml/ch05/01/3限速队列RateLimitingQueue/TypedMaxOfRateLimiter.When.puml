@@ -1,0 +1,65 @@
+@startuml
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+
+title TypedMaxOfRateLimiter.When()方法的实现
+
+start
+group When()
+:ret := time.Duration(0);
+
+repeat :\t遍历数据限速器列表 \n _, limiter := range r.limiters;
+:curr := limiter.When(item);
+if (curr > ret) is (是) then
+  :ret = curr;
+else (否)
+endif
+'backward:这是一个后撤行为;
+repeat while (还没有遍历完成) is (是)
+end group
+stop
+@enduml
+

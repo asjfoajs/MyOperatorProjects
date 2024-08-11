@@ -1,0 +1,398 @@
+@startuml
+''https://plantuml.com/class-diagram
+'
+'abstract class AbstractList
+'abstract AbstractCollection
+'interface List
+'interface Collection
+'
+'List <|-- AbstractList
+'Collection <|-- AbstractCollection
+'
+'Collection <|- List
+'AbstractCollection <|- AbstractList
+'AbstractList <|-- ArrayList
+'
+'class ArrayList {
+'Object[] elementData
+'size()
+'}
+'
+'enum TimeUnit {
+'DAYS
+'HOURS
+'MINUTES
+'}
+
+	interface workqueue.TypedInterface {
+		..method..
+		{method} + Add(item T)
+		{method} + Len() int
+		{method} + Get() (item T, shutdown bool)
+		{method} + Done(item T)
+		{method} + ShutDown()
+		{method} + ShutDownWithDrain()
+		{method} + ShuttingDown() bool
+	}
+   note top of workqueue.TypedInterface
+        Queue接口
+   end note
+   note right of workqueue.TypedInterface::Add
+    添加一个元素
+   end note
+   note right of workqueue.TypedInterface::Len
+    元素个数
+   end note
+   note right of workqueue.TypedInterface::Get
+    获取一个元素，第二个返回值和channel类似标记队列是否关闭了
+   end note
+   note right of workqueue.TypedInterface::Done
+    标记一个元素已经处理完
+   end note
+   note right of workqueue.TypedInterface::ShutDown
+    关闭队列
+   end note
+   note right of workqueue.TypedInterface::ShutDownWithDrain
+    关闭队列，但是等待队列汇总元素处理完
+   end note
+   note right of workqueue.TypedInterface::ShuttingDown
+    标记当前channel是否正在关闭
+   end note
+
+   class workqueue.Typed {
+		..field..
+		{field} - queue : Queue[t]
+		{field} - dirty : set[t]
+		{field} - processing : set[t]
+		{field} - cond : *sync.Cond
+		{field} - shuttingDown : bool
+		{field} - drain : bool
+		{field} - metrics : queueMetrics
+		{field} - unfinishedWorkUpdatePeriod : time.Duration
+		{field} - clock : clock.WithTicker
+		..method..
+		{method} + Add(item T)
+		{method} + Done(item T)
+		{method} + Get() (item T, shutdown bool)
+		{method} + Len() int
+		{method} + ShutDown()
+		{method} + ShutDownWithDrain()
+		{method} + ShuttingDown() bool
+		{method} - updateUnfinishedWorkLoop()
+		..constructor..
+		{method} + NewTyped() *Typed[T]
+		{method} + NewTypedWithConfig(config TypedQueueConfig[T]) *Typed[T]
+		{method} - newQueue(c clock.WithTicker, queue Queue[T], metrics queueMetrics, updatePeriod time.Duration) *Typed[T]
+		{method} - newQueueWithConfig(config TypedQueueConfig[T], updatePeriod time.Duration) *Typed[T]
+	}
+	TypedInterface <|.. Typed  : 实现
+
+	note top of workqueue.Typed
+        普通队列
+    end note
+	note right of workqueue.Typed::queue
+	 定义元素的处理顺序，里面所有元素在dirty集合中应该都有，而不能出现在processing集合中
+    end note
+    note right of workqueue.Typed::dirty
+     标记所有需要被处理的元素
+    end note
+    note right of workqueue.Typed::processing
+     定义元素的处理顺序，里面所有元素在dirty集合中应该都有，而不能出现在processing集合中
+    end note
+
+    class workqueue.empty {
+    }
+    interface workqueue.t {
+    }
+
+    workqueue.set::map *-> workqueue.empty : 使用
+    workqueue.set::map *-> workqueue.t : 使用
+    class workqueue.set{
+    	..prototype..
+    	map[t]empty
+    	..method..
+    	+ has(item t) : bool
+        + insert(item t) : void
+        + delete(item t) : void
+        + len() : int
+    }
+
+    note top of workqueue.set
+     自定义set
+    end note
+
+
+    interface workqueue.TypedDelayingInterface {
+		..supper..
+		{static} TypedInterface[T]
+		..method..
+		{method} + AddAfter(item T, duration time.Duration)
+	}
+    TypedInterface <|-- TypedDelayingInterface  : 继承
+    note top of workqueue.TypedDelayingInterface
+        延时队列接口
+    end note
+	note right of workqueue.TypedDelayingInterface::AddAfter
+        在指定duration时间后添加元素
+    end note
+
+'	workqueue.delayingType *--> workqueue.waitFor
+'	workqueue.delayingType --> workqueue.retryMetrics
+	class workqueue.delayingType {
+		..supper..
+		{static} TypedInterface[T]
+		..field..
+		{field} - clock : clock.Clock
+		{field} - stopCh : chan struct{}
+		{field} - stopOnce : sync.Once
+		{field} - heartbeat : clock.Ticker
+		{field} - waitingForAddCh : chan *waitFor
+		{field} - metrics : retryMetrics
+		..method..
+		{method} + AddAfter(item T, duration time.Duration)
+		{method} + ShutDown()
+		{method} - waitingLoop()
+		..constructor..
+		{method} - newDelayingQueue(clock clock.WithTicker, q TypedInterface[T], name string, provider MetricsProvider) *delayingType[T]
+	}
+	TypedDelayingInterface  <|.. delayingType : 实现
+	note top of workqueue.delayingType
+        延时队列
+    end note
+    note right of workqueue.delayingType::TypedInterface[T]
+        嵌套普通队列Queue
+    end note
+    note right of workqueue.delayingType::clock
+        计时器
+    end note
+    note right of workqueue.delayingType::stopOnce
+        用来确保 ShutDown 只执行一次
+    end note
+    note right of workqueue.delayingType::heartbeat
+        默认10秒心跳，后面用在一个大循环里，避免没有新元素时一直阻塞
+    end note
+    note right of workqueue.delayingType::waitingForAddCh
+        传递waitFor的channel，默认大小为1000
+    end note
+
+
+    class workqueue.waitFor {
+    	..field..
+    	{field} - data : t
+    	{field} - readyAt : time.Time
+    	{field} - index : int
+    }
+'	note top of workqueue.delayingType
+'        延时队列
+'    end note
+    note right of workqueue.waitFor::data
+       准备添加到队列中的数据
+    end note
+    note right of workqueue.waitFor::readyAt
+       应该被加入队列的时间
+    end note
+    note right of workqueue.waitFor::index
+       在heap中的索引
+    end note
+
+	class workqueue.waitForPriorityQueue {
+		..prototype..
+		[]*waitFor
+		..method..
+		{method} + Push(x interface{})
+		{method} + Pop() interface{}
+		{method} + Peek() interface{}
+	}
+	workqueue.waitForPriorityQueue::waitFor *-> workqueue.waitFor : 使用
+	note top of workqueue.waitForPriorityQueue
+	 这里定义了一个waitFor的优先级
+	 队列, 使用最小堆的方式来实现
+	 (个人理解成一个栈)
+    end note
+    note left of workqueue.waitForPriorityQueue::Push
+       从队列中尾巴添加一个元素
+    end note
+    note left of workqueue.waitForPriorityQueue::Pop
+       从队列中尾巴移除一个元素
+    end note
+    note left of workqueue.waitForPriorityQueue::Peek
+       获取队列头部的第一个元素
+    end note
+
+ 	interface workqueue.TypedRateLimitingInterface {
+ 		..supper..
+ 		{static} TypedDelayingInterface[T]
+ 		..method..
+ 		{method} + AddRateLimited(item T)
+ 		{method} + Forget(item T)
+ 		{method} + NumRequeues(item T) int
+ 	}
+ 	TypedDelayingInterface  <|-- TypedRateLimitingInterface :继承
+    note top of workqueue.TypedRateLimitingInterface
+       延时队列接口
+    end note
+    note right of workqueue.TypedRateLimitingInterface::TypedDelayingInterface[T]
+       和延时队列里内嵌了普通队列一样，限速队列汇总内嵌了延时队列
+    end note
+    note right of workqueue.TypedRateLimitingInterface::AddRateLimited
+       限速方式往队列中加入一个元素
+    end note
+    note right of workqueue.TypedRateLimitingInterface::Forget
+       标识一个元素结束重试
+    end note
+    note right of workqueue.TypedRateLimitingInterface::NumRequeues
+      标识这个元素被处理多少次了
+    end note
+
+
+    interface workqueue.TypedRateLimiter {
+'		..prototype..
+'		TypedRateLimitingInterface[any]
+		..method..
+        {method} + When(item T) time.Duration
+        {method} + Forget(item T)
+        {method} + NumRequeues(item T) int
+	}
+
+    note top of workqueue.TypedRateLimiter
+       限速器接口
+    end note
+    note right of workqueue.TypedRateLimiter::When
+       返回一个元素需要等待的时长
+    end note
+    note right of workqueue.TypedRateLimiter::Forget
+       标识一个元素结束重试
+    end note
+    note right of workqueue.TypedRateLimiter::NumRequeues
+       标识这个元素被处理多少次了
+    end note
+
+
+	class workqueue.rateLimitingType {
+		..supper..
+		{static} TypedDelayingInterface[T]
+		..field..
+		{field} - rateLimiter : TypedRateLimiter[T]
+		..constructor..
+		NewTypedRateLimitingQueueWithConfig[T comparable](rateLimiter TypedRateLimiter[T], config TypedRateLimitingQueueConfig[T]) TypedRateLimitingInterface[T]
+		..method..
+        {method} + When(item T) time.Duration
+        {method} + Forget(item T)
+        {method} + NumRequeues(item T) int
+	}
+
+    TypedRateLimitingInterface <|.. rateLimitingType : 实现
+    workqueue.rateLimitingType::rateLimiter *-> workqueue.TypedRateLimiter : 使用
+
+    note top of workqueue.rateLimitingType
+       限速队列
+    end note
+    note right of workqueue.rateLimitingType::When
+         内部存了一个延时队列，通过限速器计算出一个等待时间，然后传给延时队列
+    end note
+
+
+	class workqueue.TypedBucketRateLimiter {
+		..supper..
+		{static} *rate.Limiter
+		..method..
+		{method} + Forget(item T)
+		{method} + NumRequeues(item T) int
+		{method} + When(item T) time.Duration
+	}
+
+    TypedRateLimiter <|.. TypedBucketRateLimiter  : 实现
+
+	note top of workqueue.TypedBucketRateLimiter
+	    令牌桶限速器
+	    (比如桶里有100个令牌，每次消费1个，每妙发放10个)
+	end note
+
+
+	class workqueue.TypedItemExponentialFailureRateLimiter {
+		..field..
+		{field} - failuresLock : sync.Mutex
+		{field} - failures : map[T]int
+		{field} - baseDelay : time.Duration
+		{field} - maxDelay : time.Duration
+		..method..
+		{method} + Forget(item T)
+		{method} + NumRequeues(item T) int
+		{method} + When(item T) time.Duration
+	}
+
+	TypedRateLimiter <|.. TypedItemExponentialFailureRateLimiter  : 实现
+
+    note top of workqueue.TypedItemExponentialFailureRateLimiter
+	    指数级增长限速器
+	    (失败越多，限速越长)
+	end note
+
+	class workqueue.TypedItemFastSlowRateLimiter {
+		..field..
+		{field} - failuresLock : sync.Mutex
+		{field} - failures : map[T]int
+		{field} - maxFastAttempts : int
+		{field} - fastDelay : time.Duration
+		{field} - slowDelay : time.Duration
+		..method..
+		{method} + Forget(item T)
+		{method} + NumRequeues(item T) int
+		{method} + When(item T) time.Duration
+	}
+
+    TypedRateLimiter <|.. TypedItemFastSlowRateLimiter : 实现
+
+    note top of workqueue.TypedItemFastSlowRateLimiter
+       快慢限速器
+       (快速重试次数达到上限后，开始慢重试)
+	end note
+    note right of workqueue.TypedItemFastSlowRateLimiter::maxFastAttempts
+       快速重试的次数
+    end note
+    note right of workqueue.TypedItemFastSlowRateLimiter::fastDelay
+       快重试间隔
+    end note
+    note right of workqueue.TypedItemFastSlowRateLimiter::slowDelay
+       慢重试间隔
+    end note
+
+	class workqueue.TypedMaxOfRateLimiter {
+		..field..
+		{field} - limiters : []TypedRateLimiter[T]
+		..method..
+		{method} + Forget(item T)
+		{method} + NumRequeues(item T) int
+		{method} + When(item T) time.Duration
+	}
+
+    TypedRateLimiter <|.. TypedMaxOfRateLimiter : 实现
+
+    note top of workqueue.TypedMaxOfRateLimiter
+       最大的限速器
+       (这个限速器可以组合多个限速器，取最大值)
+	end note
+
+	class workqueue.TypedWithMaxWaitRateLimiter {
+		..field..
+		{field} - limiter : TypedRateLimiter[T]
+		{field} - maxDelay : time.Duration
+		..method..
+		{method} + Forget(item T)
+		{method} + NumRequeues(item T) int
+		{method} + When(item T) time.Duration
+	}
+
+    TypedRateLimiter <|.. TypedWithMaxWaitRateLimiter : 实现
+
+    note top of workqueue.TypedWithMaxWaitRateLimiter
+       最大等待限速器
+       (在其它限速器的基础上包装了最大等待时间
+       ，如果超过了，直接返回最大等待时间)
+	end note
+    note right of workqueue.TypedWithMaxWaitRateLimiter::maxDelay
+       最大延迟属性
+    end note
+
+
+@enduml

@@ -1,0 +1,69 @@
+@startuml
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title TypedItemExponentialFailureRateLimiter.When()方法的实现
+
+start
+group When()
+:\t\t\t失败次数加1 \n r.failures[item] = r.failures[item] + 1;
+:\t\t\t每调用一次，exp也就加1，对应到这里时2^n指数爆炸
+backoff := float64(r.baseDelay.Nanoseconds()) * math.Pow(2, float64(exp));
+if (\t如果超过了最大整型\nbackoff > math.MaxInt64) is (是) then
+  :就返回最大延时，不然后面的时间转换就会溢出
+  \t\t\treturn r.maxDelay;
+else (否)
+  :\t\t转换成时间单位ns
+  calculated := time.Duration(backoff);
+  if (\t如果超过了最大整型\n calculated > r.maxDelay) is (是) then
+    :就返回最大延时，不然后面的时间转换就会溢出
+    \t\t\treturn r.maxDelay;
+  else(否)
+    :return calculated;
+  endif
+endif
+end group
+stop
+@enduml

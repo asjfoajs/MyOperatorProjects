@@ -1,0 +1,122 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+
+title waitingLoop()方法
+
+start
+group waitingLoop()
+:\t     队列里没有元素时等待\n never := make(<-chan time.Time);
+:\t\t\t构造一个优先级队列 \n waitingForQueue := &waitForPriorityQueue{};
+:这一行其实功能上没有什么作用，不过在可读性上有点帮助 \n\t\t\t\t heap.Init(waitingForQueue);
+:这个map用来处理重复添加逻辑，下面会讲到 \n   waitingEntryByData := map[t]*waitFor{};
+while (true) is (是)
+    if (这个地方Interface从语法上来看可有可无，不过放在\n这里能够强调调用了内部Queue的shuttingDown()方法 \n\t\t q.TypedInterface.ShuttingDown()) is (是) then
+        :return;
+        kill
+    else (否)
+        while ( 队列里有有元素就开始循环 \n waitingForQueue.Len() > 0) is (是)
+           :\t\t\t获取第一个元素 \n entry := waitingForQueue.Peek().(*waitFor);
+           if (时间还没到，先不作处理 \nif entry.readyAt.After(now)) is (是) then
+               break;
+           else(否)
+               :时间到了，pop出第一个元素。注意waitingForQueue.Pop()
+               \t\t是最后一个元素,heap.Pop()是第一个元素
+               \t entry = heap.Pop(waitingForQueue).(*waitFor);
+               : 将数据加到延时队列 \n q.Add(entry.data.(T));
+               :  在map中删除已经加到延时队列的元素 \n delete(waitingEntryByData, entry.data);
+           endif
+        endwhile(否)
+
+        :如果队列为空则一直等待;
+        switch(select)
+            case(<-q.stopCh)
+                :return;
+                kill
+            case(心跳时间是10秒。\n到了就继续下一轮循环\n <-q.heartbeat.C())
+            case(第一个元素的等待时间\n到了，继续下一轮循环\n <-nextReadyAt)
+            case(waitingForAddCh收到了新的元素\n waitEntry := <-q.waitingForAddCh:)
+                if (\t\t\t时间是否没到 \n waitEntry.readyAt.After(q.clock.Now()) is (没到) then
+                :\t\t\t\t就加到优先级队列里 \n insert(waitingForQueue, waitingEntryByData, waitEntry);>
+                else (到了)
+                :\t   就加到延时队列 \n q.Add(waitEntry.data.(T));
+                endif
+                partition 下面的逻辑就是将waitingForAddCh中的数据处理完{
+                    :drained := false;
+                    while(!drained) is(是))
+                        switch(select)
+                            case(waitEntry := <-q.waitingForAddCh)
+                                if (\t\t\t时间是否没到 \n waitEntry.readyAt.After(q.clock.Now()) is (没到) then
+                                :\t\t\t\t就加到优先级队列里 \n insert(waitingForQueue, waitingEntryByData, waitEntry);
+                                else (到了)
+                                :\t   就加到延时队列 \n q.Add(waitEntry.data.(T));
+                                endif
+                            case(defalut)
+                                :drained = true;
+                        endswitch
+                    endwhile(否)
+                }
+'                floating note:
+        endswitch
+    endif
+endwhile (否)
+end group
+stop
+
+'group insert()
+'    :\t\t\tentry（表项）是否存在 \n existing, exists := knownEntries[entry.data];
+'    if (如果已经存在 exists) is (是) then
+'        if (\t并且新的entry的就绪时间更短 \n existing.readyAt.After(entry.readyAt)) is (是) then
+'          :\t\t 就更新时间 \n existing.readyAt = entry.readyAt;
+'        else (否)
+'        endif
+'    else (否)
+'      :如果不存在就丢到q里 \n heap.Push(q, entry);
+'      :同时在map中记录一下，用于查重 \n knownEntries[entry.data] = entry;
+'    endif
+'end group
+@enduml

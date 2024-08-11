@@ -1,0 +1,65 @@
+@startuml
+
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title Queue.Done()方法的实现
+'!pragma useVerticalIf on
+skinparam ConditionEndStyle diamond
+start
+group Done()
+:在processing集合中删除该元素\n     q.processing.delete(item);
+    if (如果dirty中还有，则说明还需要再次处理，\n\t放到q.queue中 if q.dirty.has(item))then (是)
+    :    放到q.queue中\nq.queue.Push(item);
+    :通知getter有新的元素\n\tq.cond.Signal();
+    (否)elseif(q.processing.len() == 0) then(是)
+    :通知getter有新的元素\n\tq.cond.Signal();
+    else(否)
+    endif
+end group
+stop
+
+@enduml

@@ -1,0 +1,65 @@
+@startuml
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title insert()方法
+start
+group insert()
+    :\t\t\tentry（表项）是否存在 \n existing, exists := knownEntries[entry.data];
+    if (如果已经存在 exists) is (是) then
+        if (\t并且新的entry的就绪时间更短 \n existing.readyAt.After(entry.readyAt)) is (是) then
+          :\t\t 就更新时间 \n existing.readyAt = entry.readyAt;
+'          kill
+        else (否)
+        endif
+    else (否)
+      :如果不存在就丢到q里 \n heap.Push(q, entry);
+      :同时在map中记录一下，用于查重 \n knownEntries[entry.data] = entry;
+    endif
+end group
+stop
+@enduml

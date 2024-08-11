@@ -1,0 +1,72 @@
+@startuml
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #0000FF
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title AddAfter()方法
+start
+group AddAfter()
+    if (如果queue正在被关闭\n\tq.shuttingDown) then (是)
+       :则返回return;
+       kill
+    else(否)
+        if (如果时间到了 \n duration <= 0) is (是) then
+          :就直接添加 \n q.Add(item);
+          :return;
+          kill
+        else (否)
+          switch (select)
+            case()
+             note left
+                <-q.stopCh
+             end note
+            case(构造一个waitFor{}，丢到waitingForAddCh \n q.waitingForAddCh <- &waitFor{data: item,\n readyAt: q.clock.Now().Add(duration)}:)
+          endswitch
+        endif
+    endif
+end group
+stop
+@enduml
