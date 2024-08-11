@@ -34,7 +34,7 @@ Date:   Sat Jul 27 10:50:48 2024 -0700
 
 如图所示，我们在编写自定义控制器的过程中大致依赖于如下组件，其中<u>圆形的是自定义控制器中需要编码的部分</u>，<u>其他椭圆和圆角矩形的是client-go提供的一些“工具”​</u>。
 
-<img src="../images/ch05/01/图5-2 编写自定义控制器依赖的组件.png" title="" alt="" data-align="center">
+<img src="../images/ch05/01/图5-2编写自定义控制器依赖的组件.png" title="" alt="" data-align="center">
 
 - Reflector：Reflector从apiserver监听(watch)特定类型的资源，拿到变更通知后，将其丢到DeltaFIFO队列中。
 
