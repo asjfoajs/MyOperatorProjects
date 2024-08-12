@@ -340,8 +340,6 @@ type waitForPriorityQueue []*waitFor
 
 这里定义了一个<mark>waitFor的优先级队列</mark>，用<mark>最小堆</mark>的方式来实现，这个类型实现了heap.Interface接口。我们具体看一下源码：
 
-这里定义了一个waitFor的优先级队列，用最小堆的方式来实现，这个类型实现了heap.Interface接口。我们具体看一下源码：
-
 ```go
 func (pq waitForPriorityQueue) Len() int {
     return len(pq)
