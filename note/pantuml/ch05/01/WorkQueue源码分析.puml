@@ -207,7 +207,6 @@
 	note top of workqueue.waitForPriorityQueue
 	 这里定义了一个waitFor的优先级
 	 队列, 使用最小堆的方式来实现
-	 (个人理解成一个栈)
     end note
     note left of workqueue.waitForPriorityQueue::Push
        从队列中尾巴添加一个元素

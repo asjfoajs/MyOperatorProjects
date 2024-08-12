@@ -81,7 +81,9 @@ while (true) is (是)
             case(第一个元素的等待时间\n到了，继续下一轮循环\n <-nextReadyAt)
             case(waitingForAddCh收到了新的元素\n waitEntry := <-q.waitingForAddCh:)
                 if (\t\t\t时间是否没到 \n waitEntry.readyAt.After(q.clock.Now()) is (没到) then
-                :\t\t\t\t就加到优先级队列里 \n insert(waitingForQueue, waitingEntryByData, waitEntry);>
+                :\t\t\t\t就加到优先级队列里
+                [[https://github.com/asjfoajs/MyOperatorProjects/blob/main/note/images/ch05/01/2延时队列DelayingQueue/insert()-insert__.svg insert(waitingForQueue, waitingEntryByData, waitEntry)]];
+'                insert(waitingForQueue, waitingEntryByData, waitEntry);
                 else (到了)
                 :\t   就加到延时队列 \n q.Add(waitEntry.data.(T));
                 endif
@@ -91,7 +93,9 @@ while (true) is (是)
                         switch(select)
                             case(waitEntry := <-q.waitingForAddCh)
                                 if (\t\t\t时间是否没到 \n waitEntry.readyAt.After(q.clock.Now()) is (没到) then
-                                :\t\t\t\t就加到优先级队列里 \n insert(waitingForQueue, waitingEntryByData, waitEntry);
+                                :\t\t\t\t就加到优先级队列里
+                                [[https://github.com/asjfoajs/MyOperatorProjects/blob/main/note/images/ch05/01/2延时队列DelayingQueue/insert()-insert__.svg insert(waitingForQueue, waitingEntryByData, waitEntry)]];
+'                                \n insert(waitingForQueue, waitingEntryByData, waitEntry);
                                 else (到了)
                                 :\t   就加到延时队列 \n q.Add(waitEntry.data.(T));
                                 endif
