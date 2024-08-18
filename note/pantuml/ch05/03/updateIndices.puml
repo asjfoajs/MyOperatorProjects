@@ -1,0 +1,100 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title updateIndices()实现
+
+skinparam ConditionEndStyle diamond
+
+start
+
+group updateIndices()
+while (所有逻辑都在这个for循环中 \n name := range i.indexers) is (是)
+  :i.updateSingleIndex(name, oldObj, newObj, key);
+  group updateSingleIndex() #FFE4E1
+    :var oldIndexValues, indexValues []string;
+    :indexFunc, ok := i.indexers[name];
+
+    if (oldObj是否存在(是删除或修改操作吗?) \n\t\t\t oldObj != nil) is (是) then
+      :oldIndexValues, err = indexFunc(oldObj);
+    else (否,创建)
+      :\t\t    相当于置空操作
+      oldIndexValues = oldIndexValues[:0];
+    endif
+
+    if (newObj是否存在(是创建或修改操作吗?) \n\t\t\t newObj != nil) is (是) then
+      :indexValues, err = indexFunc(newObj);
+    else (否,删除)
+      :\t\t    相当于置空操作
+      indexValues = indexValues[:0];
+    endif
+    :拿到一个Index，对应类型map[string]sets.String
+    \t\t\tindex := i.indices[name];
+    if (如果map不存在 \n    index == nil) is (是) then
+      :\t   则初始化一个 \n\t index = Index{} \n i.indices[name] = index;
+    else (否)
+    endif
+    if (\t\t小优化：要修改新值的与原来旧值一样 \n len(indexValues) == 1 && len(oldIndexValues) == 1  \n\t\t && indexValues[0] == oldIndexValues[0]) is (是) then
+'    len(indexValues) == 1 && len(oldIndexValues) == 1
+'    \t && indexValues[0] == oldIndexValues[0]
+      :return;
+      kill
+    else (否)
+    endif
+
+    while (处理oldIndexValues，也即是需要删除的索引值 \n\t\t _, value := range oldIndexValues)
+      :i.deleteKeyFromIndex(key, value, index);
+    endwhile
+    while (处理indexValues，也就是需要添加的索引值 \n\t\t _, value := range indexValues)
+      :i.addKeyToIndex(key, value, index);
+    endwhile
+
+  end group
+endwhile(否)
+end group
+stop
+
+@enduml

@@ -1,0 +1,305 @@
+@startuml
+
+	interface cache.Store {
+		..method..
+		{method} + Add(obj interface{}) error
+		{method} + Update(obj interface{}) error
+		{method} + Delete(obj interface{}) error
+		{method} + List() []interface{}
+		{method} + ListKeys() []string
+		{method} + Get(obj interface{}) (item interface{}, exists bool, err error)
+		{method} + GetByKey(key string) (item interface{}, exists bool, err error)
+		{method} + Replace([]interface{}, string) error
+		{method} + Resync() error
+	}
+
+	interface cache.Queue {
+		..supper..
+		{static} Store
+		..method..
+		{method} + Pop(PopProcessFunc) (interface{}, error)
+		{method} + AddIfNotPresent(interface{}) error
+		{method} + HasSynced() bool
+		{method} + Close()
+	}
+
+    cache.Store <|-- cache.Queue :继承
+
+    note left of Queue::Pop
+        会阻塞，直到有一个元素可以被pop出来，或者队列关闭
+    end note
+    note left of Queue::AddIfNotPresent
+        如果对象不再队列中就添加
+    end note
+    note left of Queue::Close
+        关闭队列
+    end note
+
+	class cache.DeltaFIFO {
+		..field..
+		{field} - lock : sync.RWMutex
+		{field} - cond : sync.Cond
+		{field} - items : map[string]Deltas
+		{field} - queue : []string
+		{field} - populated : bool
+		{field} - initialPopulationCount : int
+		{field} - keyFunc : KeyFunc
+		{field} - knownObjects : KeyListerGetter
+		{field} - closed : bool
+		{field} - emitDeltaTypeReplaced : bool
+		{field} - transformer : TransformFunc
+		..method..
+		{method} + Add(obj interface{}) error
+		{method} + AddIfNotPresent(obj interface{}) error
+		{method} + Close()
+		{method} + Delete(obj interface{}) error
+		{method} + Get(obj interface{}) (item interface{}, exists bool, err error)
+		{method} + GetByKey(key string) (item interface{}, exists bool, err error)
+		{method} + HasSynced() bool
+		{method} + IsClosed() bool
+		{method} + KeyOf(obj interface{}) (string, error)
+		{method} + List() []interface{}
+		{method} + ListKeys() []string
+		{method} + Pop(process PopProcessFunc) (interface{}, error)
+		{method} + Replace(list []interface{}, _ string) error
+		{method} + Resync() error
+		{method} + Update(obj interface{}) error
+		{method} - addIfNotPresent(id string, deltas Deltas)
+		{method} - hasSynced_locked() bool
+		{method} - listLocked() []interface{}
+		{method} - queueActionInternalLocked(actionType, internalActionType DeltaType, obj interface{}) error
+		{method} - queueActionLocked(actionType DeltaType, obj interface{}) error
+		{method} - syncKeyLocked(key string) error
+		..constructor..
+		{method} + NewDeltaFIFO(keyFunc KeyFunc, knownObjects KeyListerGetter) *DeltaFIFO
+		{method} + NewDeltaFIFOWithOptions(opts DeltaFIFOOptions) *DeltaFIFO
+	}
+
+    note right of cache.DeltaFIFO::items
+     存储对象，<default/pod1,Deltas>
+    end note
+    note right of cache.DeltaFIFO::queue
+     这个queue里是没有重复元素的，和上面items的key保持一致
+     (如default/pod1、default/pod2、system/pod3)
+    end note
+    note right of cache.DeltaFIFO::keyFunc
+     用于构造上面map用到的key,就是将namespace解析成<namespace,pod1>来做为key
+    end note
+    note right of cache.DeltaFIFO::knownObjects
+     用来检索所有的key，是一个Indexer的
+    end note
+    note right of cache.DeltaFIFO::queueActionLocked
+      核心：add()、Update()、Delete()最后都会调用这个
+      主要是构造Delta,添加到[]Delta中
+    end note
+
+	enum cache.DeltaType {
+		..prototype..
+		string
+		..field..
+		+ Added
+        + Updated
+        + Deleted
+        + Replaced
+        + Sync
+	}
+
+	class cache.Deltas {
+		..prototype..
+		[]Delta
+	}
+
+	class cache.Delta {
+		..field..
+		{field} + Type : DeltaType
+		{field} + Object : interface{}
+		..constructor..
+		{method} - isDeletionDup(a, b *Delta) *Delta
+		{method} - isDup(a, b *Delta) *Delta
+	}
+
+	cache.DeltaFIFO::items *--> cache.Deltas  : 使用
+	cache.Deltas *-> cache.Delta : 使用
+	cache.Delta::Type *-> cache.DeltaType : 使用
+	cache.Queue <|.. cache.DeltaFIFO : 实现
+
+    note right of cache.Delta::Type
+	  DeltaType是一个字符串，对应的是用Added、Updated这种单词描述一个Delta的类型
+	end note
+	note right of cache.Delta::Object
+	   Object就是这个Delta对应的对象，比如具体的某个Pod
+	end note
+
+	interface cache.Indexer {
+		..supper..
+		{static} Store
+		..method..
+		{method} + Index(indexName string, obj interface{}) ([]interface{}, error)
+		{method} + IndexKeys(indexName, indexedValue string) ([]string, error)
+		{method} + ListIndexFuncValues(indexName string) []string
+		{method} + ByIndex(indexName, indexedValue string) ([]interface{}, error)
+		{method} + GetIndexers() Indexers
+		{method} + AddIndexers(newIndexers Indexers) error
+	}
+
+	cache.Store <|-- cache.Indexer :继承
+
+	note top of cache.Indexer
+	    对象的检索功能
+	end note
+    note right of Indexer::Index
+        根据索引名和给定的对象返回符合条件的所有对象
+    end note
+    note right of Indexer::IndexKeys
+        根据索引名和索引值返回符合条件的所有对象的key
+    end note
+    note right of Indexer::ListIndexFuncValues
+        列出索引函数计算出来的索引值
+    end note
+    note right of Indexer::ByIndex
+        根据索引名和索引值返回符合条件的所有对象
+    end note
+    note right of Indexer::GetIndexers
+        获取所有的Indexers，对应map[stirng]IndexFunc类型
+    end note
+    note right of Indexer::AddIndexers
+        这个方法要在数据加入存储前调用，添加更多的索引方法，默认只通过namespace检索
+    end note
+
+	class cache.cache {
+		..field..
+		{field} - cacheStorage : ThreadSafeStore
+		{field} - keyFunc : KeyFunc
+		..method..
+		{method} + Add(obj interface{}) error
+		{method} + AddIndexers(newIndexers Indexers) error
+		{method} + ByIndex(indexName, indexedValue string) ([]interface{}, error)
+		{method} + Delete(obj interface{}) error
+		{method} + Get(obj interface{}) (item interface{}, exists bool, err error)
+		{method} + GetByKey(key string) (item interface{}, exists bool, err error)
+		{method} + GetIndexers() Indexers
+		{method} + Index(indexName string, obj interface{}) ([]interface{}, error)
+		{method} + IndexKeys(indexName, indexedValue string) ([]string, error)
+		{method} + List() []interface{}
+		{method} + ListIndexFuncValues(indexName string) []string
+		{method} + ListKeys() []string
+		{method} + Replace(list []interface{}, resourceVersion string) error
+		{method} + Resync() error
+		{method} + Update(obj interface{}) error
+	}
+
+	cache.Indexer <|.. cache.cache : 实现
+
+	class cache.KeyFunc {
+		..prototype..
+		func(obj interface{}) (string, error)
+	}
+
+    cache.cache::keyFunc *--> cache.KeyFunc  : 使用
+
+	note top of cache.KeyFunc
+        给一个对象返回一个字符串类型的key
+    end note
+
+	interface cache.ThreadSafeStore {
+		..method..
+		{method} + Add(key string, obj interface{})
+		{method} + Update(key string, obj interface{})
+		{method} + Delete(key string)
+		{method} + Get(key string) (item interface{}, exists bool)
+		{method} + List() []interface{}
+		{method} + ListKeys() []string
+		{method} + Replace(map[string]interface{}, string)
+		{method} + Index(indexName string, obj interface{}) ([]interface{}, error)
+		{method} + IndexKeys(indexName, indexedValue string) ([]string, error)
+		{method} + ListIndexFuncValues(name string) []string
+		{method} + ByIndex(indexName, indexedValue string) ([]interface{}, error)
+		{method} + GetIndexers() Indexers
+		{method} + AddIndexers(newIndexers Indexers) error
+		{method} + Resync() error
+	}
+
+	cache.cache::cacheStorage *--> cache.ThreadSafeStore : 使用
+
+	class cache.threadSafeMap {
+		..field..
+		{field} - lock : sync.RWMutex
+		{field} - items : map[string]interface{}
+		{field} - index : *storeIndex
+		..method..
+		{method} + Add(key string, obj interface{})
+		{method} + AddIndexers(newIndexers Indexers) error
+		{method} + ByIndex(indexName, indexedValue string) ([]interface{}, error)
+		{method} + Delete(key string)
+		{method} + Get(key string) (item interface{}, exists bool)
+		{method} + GetIndexers() Indexers
+		{method} + Index(indexName string, obj interface{}) ([]interface{}, error)
+		{method} + IndexKeys(indexName, indexedValue string) ([]string, error)
+		{method} + List() []interface{}
+		{method} + ListIndexFuncValues(indexName string) []string
+		{method} + ListKeys() []string
+		{method} + Replace(items map[string]interface{}, resourceVersion string)
+		{method} + Resync() error
+		{method} + Update(key string, obj interface{})
+	}
+
+	cache.ThreadSafeStore <|.. cache.threadSafeMap : 实现
+
+    note left of cache.threadSafeMap::items
+        key为defautl_pod1,value为pod1对象，就是说通过
+        Indexers到Indices再到items中检索对应的对象
+    end note
+
+	class cache.storeIndex {
+		..field..
+		{field} - indexers : Indexers
+		{field} - indices : Indices
+		..method..
+		{method} - addIndexers(newIndexers Indexers) error
+		{method} - addKeyToIndex(key, indexValue string, index Index)
+		{method} - deleteKeyFromIndex(key, indexValue string, index Index)
+		{method} - getIndexValues(indexName string) []string
+		{method} - getKeysByIndex(indexName, indexedValue string) (sets.String, error)
+		{method} - getKeysFromIndex(indexName string, obj interface{}) (sets.String, error)
+		{method} - reset()
+		{method} - updateIndices(oldObj interface{}, newObj interface{}, key string)
+		{method} - updateSingleIndex(name string, oldObj interface{}, newObj interface{}, key string)
+	}
+
+	cache.threadSafeMap::index *--> cache.storeIndex  : 使用
+	cache.storeIndex::indices *--> cache.Indices  : 使用
+	cache.storeIndex::indexers *--> cache.Indexers  : 使用
+
+	class cache.Indexers {
+		..prototype..
+		map[string]IndexFunc
+	}
+
+    cache.Indexers *--> cache.IndexFunc  : 使用
+
+	note top of cache.Indexers
+	  结合起来理解成Map<string,func()>,key是类型如(NameSpace/PodName),value是对应的解析函数
+      也就是将NameSpace解析成(default/pod1、default/pod2、system/pod3)
+	end note
+	class cache.IndexFunc {
+		..prototype..
+		func(obj interface{}) ([]string, error)
+	}
+
+	class cache.Indices {
+		..prototype..
+		map[string]Index
+	}
+
+    cache.Indices *--> cache.Index  : 使用
+
+    note top of cache.Indices
+     结合Index，可以知道是一个Map<string,Map<string,Set<string>>>,类型key为类型名
+     如"default",里面map的key是defautl，value就是(default_pod1、default_pod2)
+    end note
+
+	class cache.Index {
+		..prototype..
+		map[string]sets.String
+	}
+@enduml

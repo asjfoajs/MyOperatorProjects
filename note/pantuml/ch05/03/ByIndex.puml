@@ -1,0 +1,67 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title ByIndex()实现
+
+skinparam ConditionEndStyle diamond
+
+start
+group Index()
+:set, err := c.index.getKeysByIndex(indexName, indexedValue);
+    group getKeysByIndex()
+        :indexFunc := i.indexers[indexName];
+        :index := i.indices[indexName];
+        :return index[indexedValue], nil;
+    end group
+    :list := make([]interface{}, 0, set.Len());
+    while (key := range set)
+      :list = append(list, c.items[key]);
+    endwhile
+	:return list, nil;
+end group
+stop
+@enduml
