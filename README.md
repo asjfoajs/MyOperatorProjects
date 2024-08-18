@@ -5,7 +5,7 @@
 
 [Kubernetes API介绍](note/ch03/Kubernetes%20API介绍.md)
 
-[理解client-go](note/ch04/理解client-go)
+[理解client-go](note/ch04/理解client-go.md)
 
 [WorkQueue源码分析](note/ch05/WorkQueue源码分析.md)
 
