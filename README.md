@@ -10,3 +10,9 @@
 [WorkQueue源码分析](note/ch05/WorkQueue源码分析.md)
 
 [DeltaFIFO和Indexer](note/ch05/DeltaFIFO和Indexer.md)
+
+[项目核心依赖包分析](note/ch06/项目核心依赖包分析.md)
+
+[Operator开发进阶(上)](note/ch07/Operator开发进阶(上).md)
+
+[Operator开发进阶(下)](note/ch07/Operator开发进阶(下).md)
