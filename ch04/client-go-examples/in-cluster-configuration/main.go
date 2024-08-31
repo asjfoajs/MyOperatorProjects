@@ -22,7 +22,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	clinetset.AppsV1().Deployments()
 	for {
 		//3.通过clientset来列出特定命名空间里的所有Pod
 		pods, err := clinetset.CoreV1().Pods("default").

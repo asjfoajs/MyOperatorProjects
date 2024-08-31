@@ -18,20 +18,26 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strconv"
-	"time"
-
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"time"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	dappsv1 "github.com/asjfoajs/MyOperatorProjects/application-operator/api/v1"
+	v1 "github.com/asjfoajs/MyOperatorProjects/application-operator/api/v1"
 )
+
+const GenericRequeueDuration = 1 * time.Minute
+
+var CounterReconcileApplication int64
 
 // ApplicationReconciler reconciles a Application object
 type ApplicationReconciler struct {
@@ -43,6 +49,12 @@ type ApplicationReconciler struct {
 // +kubebuilder:rbac:groups=apps.hyj.cn,resources=applications/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=apps.hyj.cn,resources=applications/finalizers,verbs=update
 
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
+
+// +kubebuilder:rbac:groups=apps,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=services/status,verbs=get;update;patch
+
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
@@ -53,51 +65,108 @@ type ApplicationReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	l := log.FromContext(ctx)
+	_ = log.FromContext(ctx)
 
-	//get the Application
-	//声明一个*Application类型的实例app用来接收我们的CR
-	app := &dappsv1.Application{}
-	//NamespacedName在这里也就是default/application-sample
+	// TODO(user): your logic here
+	<-time.NewTicker(100 * time.Millisecond).C
+	log := log.FromContext(ctx)
+
+	CounterReconcileApplication += 1
+	log.Info("Starting a reconcile", "number", CounterReconcileApplication)
+
+	app := &v1.Application{}
 	if err := r.Get(ctx, req.NamespacedName, app); err != nil {
-		//err分很多中情况，如果找不到，一般不需要进一步处理，只是说明这个CR被删了而已
 		if errors.IsNotFound(err) {
-			l.Info("Application resource not found. Ignoring since object must be deleted")
-			//直接返回，不带错误，结束本次调谐
+			log.Info("Application not found")
 			return ctrl.Result{}, nil
 		}
-		//除了NotFound之外的错误，比如连不上apiserver等，这时需要打印错误信息，然后返回这个
-		//错误以及表示1分钟后重试的Result
-		l.Error(err, "Failed to get Application")
-		return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
+
+		log.Error(err, "Failed to get the Application,will requeue after a short time")
+
+		return ctrl.Result{RequeueAfter: GenericRequeueDuration}, err
 	}
 
-	//create pods
-	for i := 0; i < int(app.Spec.Replicas); i++ {
-		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      app.Name + "-" + strconv.Itoa(i),
-				Namespace: app.Namespace,
-				Labels:    app.Labels,
-			},
-			Spec: app.Spec.Teplate.Spec,
-		}
+	//reconcile sub-resources
+	var result ctrl.Result
+	var err error
 
-		if err := r.Create(ctx, pod); err != nil {
-			l.Error(err, "Failed to create pod")
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, err
-		}
-
-		l.Info(fmt.Sprintf("the Pod (%s) has created", pod.Name))
+	result, err = r.reconcileDeployment(ctx, app)
+	if err != nil {
+		log.Error(err, "Failed to reconcile Deployment")
+		return result, err
 	}
 
-	l.Info("all pods has created")
+	result, err = r.reconcileService(ctx, app)
+	if err != nil {
+		log.Error(err, "Failed to reconcile Service")
+	}
+
+	log.Info("All resources have been reconciled")
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ApplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	setupLog := ctrl.Log.WithName("setup")
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&dappsv1.Application{}).
+		For(&v1.Application{}, builder.WithPredicates(predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return true
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				setupLog.Info("The Application has been deleted.", "name", e.Object.GetName())
+				return false
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				if e.ObjectNew.GetResourceVersion() == e.ObjectOld.GetResourceVersion() {
+					return false
+				}
+				if reflect.DeepEqual(e.ObjectNew.(*v1.Application).Spec, e.ObjectOld.(*v1.Application).Spec) {
+					return false
+				}
+				return true
+			},
+		})).
+		//1.Deployment
+		Owns(&appsv1.Deployment{}, builder.WithPredicates(predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return false
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				setupLog.Info("The Deployment has been deleted.", "name", e.Object.GetName())
+				return true
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				if e.ObjectNew.GetResourceVersion() == e.ObjectOld.GetResourceVersion() {
+					return false
+				}
+
+				if reflect.DeepEqual(e.ObjectNew.(*v1.Application).Spec, e.ObjectOld.(*v1.Application)) {
+					return false
+				}
+				return true
+			},
+			GenericFunc: nil,
+		})).
+		//2.Service
+		Owns(&corev1.Service{}, builder.WithPredicates(predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return false
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				setupLog.Info("The Service has been deleted.", "name", e.Object.GetName())
+				return true
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				if e.ObjectNew.GetResourceVersion() == e.ObjectOld.GetResourceVersion() {
+					return false
+				}
+				if reflect.DeepEqual(e.ObjectNew.(*v1.Application).Spec, e.ObjectOld.(*v1.Application)) {
+					return false
+				}
+				return true
+			},
+		})).
 		Complete(r)
 }

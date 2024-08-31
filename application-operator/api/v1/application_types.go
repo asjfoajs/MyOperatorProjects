@@ -17,23 +17,44 @@ limitations under the License.
 package v1
 
 import (
-	corevl "k8s.io/api/core/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+
+// ApplicationSpec defines the desired state of Application
 type ApplicationSpec struct {
-	Replicas int32                  `json:"replicas,omitempty"` //声明Pod副本数
-	Teplate  corevl.PodTemplateSpec `json:"template,omitempty"` //声明Pod模板的配置
+	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+
+	Deployment DeploymentTemplate `json:"deployment,omitempty"`
+	Service    ServiceTemplate    `json:"service,omitempty"`
+}
+
+type DeploymentTemplate struct {
+	appsv1.DeploymentSpec `json:",inline"`
+}
+
+type ServiceTemplate struct {
+	corev1.ServiceSpec `json:",inline"`
 }
 
 // ApplicationStatus defines the observed state of Application
 type ApplicationStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	Workflow appsv1.DeploymentStatus `json:"workflow"`
+	Network  corev1.ServiceStatus    `json:"network"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:path=applications,singular=application,scope=Namespaced,shortName=app
+// +kubebuilder:storageversion
 
 // Application is the Schema for the applications API
 type Application struct {
