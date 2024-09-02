@@ -1010,7 +1010,6 @@ spec:
         name: nginx
         ports:
         - containerPort: 80
-
 ```
 
 可以看到最后command中用到的SERVICE_NAME变量被渲染成dev-nginx了，和预期一致。
@@ -1021,26 +1020,156 @@ spec:
 
 首先准备一个Base目录，然后在Base目录内执行如下命令创建kustomization.yaml：
 
-
+```shell
+cat <<EOF >./kustomization.yaml
+resources:
+- nginx-deployment.yaml
+- nginx-service.yaml
+EOF
+```
 
 接着创建这里引用的两个资源文件：
 
-
+```shell
+cat <<EOF >nginx-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  selector:
+    - matchLabels:
+        app: nginx
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.16
+          ports:
+            - containerPort: 80
+EOF
+```
 
 nginx-service.yaml的文件内容如下：
 
-
+```shell
+cat <<EOF >nginx-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+  type: NodePort
+EOF
+```
 
 至此，Base就准备好了。然后可以创建两个Overlay来引用这个Base，并且打上不一样的name前缀来得到两套配置。
 
-
+```shell
+mkdir dev
+cat <<EOF > dev/kustomization.yaml
+bases:
+  - ../base
+namePrefix: dev-
+EOF
+```
 
 在Base同级目录下执行下面的命令：
 
+```shell
+mkdir prod
+cat <<EOF > prod/kustomization.yaml
+bases:
+  - ../base
+namePrefix: prod-
+EOF
+```
 
+最后查看一下构建的效果：`kustomize build  dev`
 
-最后查看一下构建的效果：
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: dev-nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+  selector:
+    app: nginx
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: dev-nginx
+spec:
+  replicas: 3
+  selector:
+  - matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx:1.16
+        name: nginx
+        ports:
+        - containerPort: 80
+```
 
+最后查看一下构建的效果：`kustomize build prod`
 
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: prod-nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+  selector:
+    app: nginx
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nginx
+  name: prod-nginx
+spec:
+  replicas: 3
+  selector:
+  - matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx:1.16
+        name: nginx
+        ports:
+        - containerPort: 80
+```
 
-最后查看一下构建的效果：
+由此可见，只需要给kustomize build命令传递不同的kustomization目录路径，就可以得到相对应的配置渲染输出。
