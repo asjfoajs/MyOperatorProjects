@@ -18,3 +18,5 @@
 [Operator开发进阶(下)](note/ch07/Operator开发进阶(下).md)
 
 [使用Kustomize管理配置](note/ch09/使用Kustomize管理配置.md)
+
+[使用Helm打包应用](note/ch10/使用Helm打包应用.md)
