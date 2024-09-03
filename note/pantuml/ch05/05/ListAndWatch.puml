@@ -1,0 +1,159 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title ListAndWatch实现
+
+skinparam ConditionEndStyle diamond
+
+start
+'    :r.watchList(stopCh);
+'    group watchList(stopCh)
+'        :var resourceVersion string;
+'
+'    end group
+    :r.list(stopCh);
+    group list
+        :var resourceVersion string;
+        :当r.lastSyncResourceVersion为""时这里是"0",当使用r.lastSyncResourceVersion失败时
+        	这里为"",区别是""会直接请求到etcd，获取一个新的版本，而"0"访问的是cache
+        	options := metav1.ListOptions{ResourceVersion: r.relistResourceVersion()};
+        :设置这个属性后，下一次list会从etcd中获取
+        r.setIsLastSyncResourceVersionUnavailable(true);
+
+        fork
+            :go func() { //内嵌一个函数这里直接调用;
+            :\t\t\t\t\t\t\t\t 使用 tool/pager 组装分页逻辑
+            pager := pager.New(pager.SimplePageFunc(func(opts metav1.ListOptions) (runtime.Object, error) {
+                return r.listerWatcher.List(opts)
+            }));
+
+            :\t\t\t\t\t\t\t\t获取数据
+            list, paginatedResult, err = pager.ListWithAlloc(context.Background(), options);
+
+            if (\t 如果过期或者不合法 resourceversion 则进行重试 \n isExpiredError(err) || isTooLargeResourceVersionError(err)) is (是) then
+              :\t 设置这个属性后，下一次list会从etcd中获取
+              r.setIsLastSyncResourceVersionUnavailable(true);
+              :list, paginatedResult, err = pager.ListWithAlloc(context.Background(),
+              metav1.ListOptions{ResourceVersion: r.relistResourceVersion()});
+            else (否)
+            endif
+            :close(listCh);
+        fork again
+            :会select {case <-listCh:;
+            :\t\t\t\t\t list成功
+            r.setIsLastSyncResourceVersionUnavailable(false);
+            :listMetaInterface, err := meta.ListAccessor(list);
+            :\t\t\t\t  获取当前最新的版本
+            resourceVersion = listMetaInterface.GetResourceVersion();
+            :\t\t\t 转换数据结构
+            items, err := meta.ExtractListWithAlloc(list);
+            :\t 将list到的items添加到store中，这里的store也就是DeltaFIFO，
+            也就是添加一个SyncDeltaType，不过这里的resourceVersion值并没有实际用到
+            \t\t\t err := r.syncWith(items, resourceVersion);
+            :\t\t\t 更新 resourceVersion
+            r.setLastSyncResourceVersion(resourceVersion);
+        end fork
+    end group
+    :return r.watchWithResync(w, stopCh);
+    group watchWithResync()
+    note: 可以跳过不看，默认不走
+        :resyncerrc := make(chan error, 1);
+        :cancelCh := make(chan struct{});
+        :defer close(cancelCh);
+        fork
+            :go r.startResync(stopCh, cancelCh, resyncerrc);
+            group startResync()
+                :通常rsyncPeriod为0,不会触犯resync操作
+                resyncCh, cleanup := r.resyncChan();
+                while (true)
+                    switch(select)
+                    case(case <-resyncCh)
+                        if (\t\t 符合条件时进行重新同步 \n r.ShouldResync == nil || r.ShouldResync()) is (yes) then
+                          :r.store.Resync();
+                        else(否)
+                        endif
+                        :退出时关闭 resync 定时器
+                        cleanup();
+                        :resyncCh, cleanup = r.resyncChan();
+                    endswitch
+                endwhile
+            end group
+            kill
+        fork again
+            :return r.watch(w, stopCh, resyncerrc);
+            group watch()
+                :\t\t\t\t\t\t 配置带backoff(下次重试会等待)退避的 rety 重试对象.
+                 retry := NewRetryWithDeadline(r.MaxInternalErrorRetryDuration, time.Minute, apierrors.IsInternalError, r.clock);
+                while (true)
+                    switch(select)
+                    case(<-stopCh)
+                        :return nil;
+                    case(default)
+                        :\t\t\t\t\t\t\t 超时时间是5～10分钟
+                        timeoutSeconds := int64(r.minWatchTimeout.Seconds() * (rand.Float64() + 1.0));
+                        :options := metav1.ListOptions{
+                            上次的 resource version, 这样订阅到 apiserver 后, 可以拿到增量的数据.
+                            ResourceVersion: r.LastSyncResourceVersion(),
+                            如果超时没有接收到任何Event,这里需要停止监听，避免一直阻塞
+                            TimeoutSeconds: &timeoutSeconds,
+                            用于降低apiserver压力，bookmark类型响应的对象主要只有RV信息
+                            AllowWatchBookmarks: true,
+                        };
+                        :创建一个watcher监听对象, 监听apiserver获取变更事件,
+                        \t    把新增事件扔到 watch.ResultChan 队列中.
+                        \t\t w, err = r.listerWatcher.Watch(options);
+                        :调用 `watcherHandler` 监听新增的事件, 然后把新增加到 DeltaFIFO 增量队列里.
+                        err = handleWatch(start, w, r.store, r.expectedType, r.expectedGVK,r.name,
+                            r.typeDescription, r.setLastSyncResourceVersion,r.clock, resyncerrc, stopCh);
+                        :retry.After(err);
+                    endswitch
+                endwhile
+            end group
+        end fork
+    end group
+stop
+@enduml

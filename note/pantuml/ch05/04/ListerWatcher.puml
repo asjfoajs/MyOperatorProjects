@@ -1,0 +1,111 @@
+@startuml
+	class cache.ListWatch {
+		..field..
+		{field} + ListFunc : ListFunc
+		{field} + WatchFunc : WatchFunc
+		{field} + DisableChunking : bool
+		..method..
+		{method} + List(options metav1.ListOptions) (runtime.Object, error)
+		{method} + Watch(options metav1.ListOptions) (watch.Interface, error)
+		..constructor..
+		{method} + NewFilteredListWatchFromClient(c Getter, resource string, namespace string, optionsModifier func(options *metav1.ListOptions)) *ListWatch
+		{method} + NewListWatchFromClient(c Getter, resource string, namespace string, fieldSelector fields.Selector) *ListWatch
+	}
+
+    note left of cache.ListWatch::ListFunc
+        list某个namespace下的某个resource
+    end note
+
+    note left of cache.ListWatch::WatchFunc
+        监听某个namespace(命名空间)下的资源
+    end note
+
+    interface cache.Getter {
+		..method..
+		{method} + Get() *restclient.Request
+	}
+
+    cache.ListWatch::ListFunc *-> cache.Getter  : 使用
+    cache.ListWatch::WatchFunc *-> cache.Getter  : 使用
+
+    note right of cache.Getter::Get
+        返回rest.Interface接口类型的实例，
+        实现是rest.RESTClient
+    end note
+
+	interface rest.Interface {
+		..method..
+		{method} + GetRateLimiter() flowcontrol.RateLimiter
+		{method} + Verb(verb string) *Request
+		{method} + Post() *Request
+		{method} + Put() *Request
+		{method} + Patch(pt types.PatchType) *Request
+		{method} + Get() *Request
+		{method} + Delete() *Request
+		{method} + APIVersion() schema.GroupVersion
+	}
+
+	class rest.RESTClient {
+		..field..
+		{field} - base : *url.URL
+		{field} - versionedAPIPath : string
+		{field} - content : ClientContentConfig
+		{field} - createBackoffMgr : func() BackoffManager
+		{field} - rateLimiter : flowcontrol.RateLimiter
+		{field} - warningHandler : WarningHandler
+		{field} + Client : *http.Client
+		..method..
+		{method} + APIVersion() schema.GroupVersion
+		{method} + Delete() *Request
+		{method} + Get() *Request
+		{method} + GetRateLimiter() flowcontrol.RateLimiter
+		{method} + Patch(pt types.PatchType) *Request
+		{method} + Post() *Request
+		{method} + Put() *Request
+		{method} + Verb(verb string) *Request
+		..constructor..
+		{method} + NewRESTClient(baseURL *url.URL, versionedAPIPath string, config ClientContentConfig, rateLimiter flowcontrol.RateLimiter, client *http.Client) (*RESTClient, error)
+		{method} + RESTClientFor(config *Config) (*RESTClient, error)
+		{method} + RESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error)
+		{method} + UnversionedRESTClientFor(config *Config) (*RESTClient, error)
+		{method} + UnversionedRESTClientForConfigAndClient(config *Config, httpClient *http.Client) (*RESTClient, error)
+	}
+
+    rest.Interface <|.. rest.RESTClient : 实现
+    cache.Getter::Get *-> rest.RESTClient  : 使用
+
+
+	interface cache.ListerWatcher {
+		..supper..
+		{static} Lister
+		{static} Watcher
+	}
+
+	cache.ListerWatcher <|.. cache.ListWatch : 实现
+
+	interface cache.Lister {
+		..method..
+		{method} + List(options metav1.ListOptions) (runtime.Object, error)
+	}
+
+    note right of cache.Lister::List
+        List的返回值应该是一个list类型的对象，也就是
+        其中有Items字段，里面的ResourceVersion可以
+        用来监听（watch），就是调用ListFunc(options)
+    end note
+
+    cache.ListerWatcher::Lister *-> cache.Lister  : 使用
+
+	interface cache.Watcher {
+		..method..
+		{method} + Watch(options metav1.ListOptions) (watch.Interface, error)
+	}
+
+    note right of cache.Watcher::watch
+        从指定的资源版本开始watch,
+        就是调用WatchFunc(options)
+    end note
+
+	cache.ListerWatcher::Watcher *-> cache.Watcher  : 使用
+
+@enduml

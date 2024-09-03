@@ -1,0 +1,88 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title handleAnyWatch实现
+
+skinparam ConditionEndStyle diamond
+
+start
+group handleAnyWatch()
+     while (true)
+        switch(select)
+        case (<-stopCh)
+        :return watchListBookmarkReceived, errorStopRequested;
+        kill
+        case (err := <-errCh)
+        :return watchListBookmarkReceived, err;
+        kill
+        case (event, ok := <-w.ResultChan())
+            :\t\t\t 新的resourceVersion
+            resourceVersion := meta.GetResourceVersion();
+            switch(event.Type)
+            note
+            用DeltaFIFO的Add/Update/Delete等方法完成不同类型 Event的处理，我们在
+            5.3节详细介绍国DeltaFIFO对应的 Add/Update/Delete是如何实现的
+            end note
+            case(watch.Added)
+                :store.Add(event.Object);
+            case(watch.Modified)
+                :store.Update(event.Object);
+            case(watch.Deleted)
+                :store.Delete(event.Object);
+            endswitch
+            :更新ResourceVersion版本, 下次使用该resourceVersion来watch监听.
+            \t\t setLastSyncResourceVersion(resourceVersion);
+        endswitch
+    endwhile
+    if ( watch1秒就结束了，而且没有收到事件，属于异常情况 \n watchDuration < 1*time.Second && eventCount == 0) is (是) then
+      :return watchListBookmarkReceived, fmt.Errorf("...");
+    else (否)
+      :return watchListBookmarkReceived, nil;
+    endif
+end group
+stop
+@enduml
