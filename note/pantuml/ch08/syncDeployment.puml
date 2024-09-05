@@ -1,0 +1,97 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title syncDeployment实现
+note
+syncDeployment()方法完成的事情是获取从WorkQueue中出队的key，根据这个key来sync（同步）对应的Deployment。
+end note
+
+skinparam ConditionEndStyle diamond
+    group syncDeployment()
+        :\t\t\t 从key中分割出namespace和name
+        namespace, name, err := cache.SplitMetaNamespaceKey(key);
+        :\t 根据namespace和name从cache中检索对应的Deployment对象.
+        deployment, err := dc.dLister.Deployments(namespace).Get(name);
+        :为了不改动这个cache，这是一个ThreadSafeStore
+        \t\t d := deployment.DeepCopy();
+        :everything := metav1.LabelSelector{};
+        if (\t\t 空LabelSelector会匹配所有pod。\n reflect.DeepEqual(d.Spec.Selector, &everything)) is (是) then
+          :d.Status.ObservedGeneration = d.Generation;
+          :\t\t\t\t\t 新d.Status.ObservedGeneration然后返回
+          dc.client.AppsV1().Deployments(d.Namespace).UpdateStatus(ctx, d, metav1.UpdateOptions{});
+          :return nil;
+          kill
+        else (否)
+          :\t 获取当前Deployment拥有的所有ReplicaSet，
+          \t   同时会更新这些ReplicaSet的ControllerRef
+          rsList, err := dc.getReplicaSetsForDeployment(ctx, d);
+          :\t    这个map是map[types.UID][]*v1.Pod类型，
+          \t key是rs的UID,value 是对应rs管理的所有Pod列表
+          podMap, err := dc.getPodMapForDeployment(d, rsList);
+          :根据d.Spec.Pause配置看是否更新Deployment的conditions
+          (检查deployment是否是pause状态并添加合适的condition)
+          \t\t\t dc.checkPausedConditions(ctx, d);
+
+          :scalingEvent, err := dc.isScalingEvent(ctx, d, rsList);
+
+          if (d.Spec.Paused || scalingEvent) is (是) then
+            :Pause或scale时的调谐逻辑
+            return dc.sync(ctx, d, rsList);
+            kill
+          else (否)
+          switch(d.Spec.Strategy.Type)
+          case(重建策略 \n apps.RecreateDeploymentStrategyType)
+          :return dc.rolloutRecreate(ctx, d, rsList, podMap);
+          kill
+          case(滚动更新策略 \n apps.RollingUpdateDeploymentStrategyType)
+          :return dc.rolloutRolling(ctx, d, rsList);
+          kill
+          endswitch
+          endif
+        endif
+    end group
+@enduml

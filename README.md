@@ -21,4 +21,6 @@
 
 [使用Kustomize管理配置](note/ch09/使用Kustomize管理配置.md)
 
+[Deployment Controller源码分析](note/ch08/DeploymentController源码分析)
+
 [使用Helm打包应用](note/ch10/使用Helm打包应用.md)
