@@ -1,0 +1,83 @@
+@startuml
+
+<style>
+activityDiagram {
+    BackgroundColor #F0E8F5
+    BorderColor #FFC0CB
+    FontColor #333
+    FontName Comic Sans MS
+}
+
+diamond {
+    BackgroundColor #FFDEE3
+    LineColor #FF69B4
+    FontColor #FF1493
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+arrow {
+    FontColor #FFD700
+    FontName Comic Sans MS
+    FontSize 16
+}
+
+partition {
+    LineColor #FF4500
+    FontColor #FF6347
+    RoundCorner 20
+    BackgroundColor #FFE4E1
+}
+
+note {
+    FontColor #0000FF
+    LineColor #8A2BE2
+    BackgroundColor #E6E6FA
+}
+
+document {
+    BackgroundColor #F5F5DC
+}
+
+group {
+    FontColor #FF69B4
+    LineColor #DDA0DD
+    BackgroundColor #FFB6C1
+}
+</style>
+title processDeltas实现
+
+skinparam ConditionEndStyle diamond
+
+start
+group processDeltas
+    while ( _, d := range deltas)
+        note
+            对于每个Deltas来说，其中保存了很多Delta，也就是
+            对应不同类型的多个对象，这里的遍历会从旧往新走
+        end note
+          :obj := d.Object;
+        switch (d.Type)
+        case (Sync, Replaced, Added, Updated \n 除了Deleted之外的所有情况)
+            :old, exists, err := clientState.Get(obj);
+            if (   exists \n 是否存在) is (是) then
+              :存在则更新indexer中的对象
+              clientState.Update(obj);
+              :调用ResoureceEventHnadler的OnUpdate()
+               \t\t handler.OnUpdate(old, obj);
+            else (否)
+              :不存在将对象添加到indexer中
+               \t clientState.Add(obj);
+              :调用ResoureceEventHnadler的OnAdd()
+                    handler.OnAdd(obj, isInInitialList);
+            endif
+        case(Deleted)
+        :如果是删除操作，则从indexer中删除这个对象
+        \t\t clientState.Delete(obj);
+        :调用ResoureceEventHnadler的OnDelete()
+        \t\t handler.OnDelete(obj);
+        endswitch
+    endwhile
+end group
+stop
+@enduml

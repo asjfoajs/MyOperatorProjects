@@ -13,14 +13,16 @@
 
 [ListerWatcher和Reflector](note/ch05/ListerWatcher和Reflector.md)
 
+[Informer](note/ch05/Informer.md)
+
 [项目核心依赖包分析](note/ch06/项目核心依赖包分析.md)
 
 [Operator开发进阶(上)](note/ch07/Operator开发进阶(上).md)
 
 [Operator开发进阶(下)](note/ch07/Operator开发进阶(下).md)
 
-[使用Kustomize管理配置](note/ch09/使用Kustomize管理配置.md)
-
 [Deployment Controller源码分析](note/ch08/DeploymentController源码分析)
+
+[使用Kustomize管理配置](note/ch09/使用Kustomize管理配置.md)
 
 [使用Helm打包应用](note/ch10/使用Helm打包应用.md)

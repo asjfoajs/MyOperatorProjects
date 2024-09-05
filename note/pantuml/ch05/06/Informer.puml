@@ -1,0 +1,266 @@
+@startuml
+	class cache.controller {
+		..field..
+		{field} - config : Config
+		{field} - reflector : *Reflector
+		{field} - reflectorMutex : sync.RWMutex
+		{field} - clock : clock.Clock
+		..method..
+		{method} + HasSynced() bool
+		{method} + LastSyncResourceVersion() string
+		{method} + Run(stopCh <-chan struct{})
+		{method} - processLoop()
+	}
+
+    interface cache.Controller {
+		..method..
+		{method} + Run(stopCh <-chan struct{})
+		{method} + HasSynced() bool
+		{method} + LastSyncResourceVersion() string
+	}
+
+    cache.Controller <|.. cache.controller : 实现
+
+    interface v1.DeploymentInformer {
+        ..method..
+        {method} + Informer() cache.SharedIndexInformer
+        {method} + Lister() v1.DeploymentLister
+    }
+
+    interface cache.SharedIndexInformer {
+		..supper..
+		{static} SharedInformer
+		..method..
+		{method} + AddIndexers(indexers Indexers) error
+		{method} + GetIndexer() Indexer
+	}
+
+    v1.DeploymentInformer::Informer *--> cache.SharedIndexInformer : 使用
+
+    interface cache.SharedInformer {
+ 		..method..
+ 		{method} + AddEventHandler(handler ResourceEventHandler) (ResourceEventHandlerRegistration, error)
+ 		{method} + AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration) (ResourceEventHandlerRegistration, error)
+ 		{method} + RemoveEventHandler(handle ResourceEventHandlerRegistration) error
+ 		{method} + GetStore() Store
+ 		{method} + GetController() Controller
+ 		{method} + Run(stopCh <-chan struct{})
+ 		{method} + HasSynced() bool
+ 		{method} + LastSyncResourceVersion() string
+ 		{method} + SetWatchErrorHandler(handler WatchErrorHandler) error
+ 		{method} + SetTransform(handler TransformFunc) error
+ 		{method} + IsStopped() bool
+ 	}
+
+ 	cache.SharedInformer <|-- cache.SharedIndexInformer :继承
+
+ 	note right of cache.SharedInformer::AddEventHandler
+        可以添加自定义的ResourceEventHandler
+ 	end note
+ 	note right of cache.SharedInformer::AddEventHandlerWithResyncPeriod
+        附带resync间隔配置，设置为0表示不关心resync
+ 	end note
+ 	note right of cache.SharedInformer::RemoveEventHandler
+        删除添加的ResourceEventHandler
+    end note
+    note right of cache.SharedInformer::GetStore
+        这里的Store指的是Indexer
+ 	end note
+ 	note right of cache.SharedInformer::GetController
+        过时了没有用
+ 	end note
+ 	note right of cache.SharedInformer::Run
+        通过Run来启动
+ 	end note
+    note right of cache.SharedInformer::HasSynced
+        这里和resync逻辑没有关系，表示Indexer至少更新过一次全量的对象
+ 	end note
+  	note right of cache.SharedInformer::LastSyncResourceVersion
+         最后一次拿到的RV
+  	end note
+    note right of cache.SharedInformer::SetWatchErrorHandler
+         用于每次ListAndWatch断开连接时回调，主要是日志记录的作用
+  	end note
+    note right of cache.SharedInformer::SetTransform
+        用于在对象存储前执行一些操作
+  	end note
+
+	class cache.sharedIndexInformer {
+		..field..
+		{field} - indexer : Indexer
+		{field} - controller : Controller
+		{field} - processor : *sharedProcessor
+		{field} - cacheMutationDetector : MutationDetector
+		{field} - listerWatcher : ListerWatcher
+		{field} - objectType : runtime.Object
+		{field} - objectDescription : string
+		{field} - resyncCheckPeriod : time.Duration
+		{field} - defaultEventHandlerResyncPeriod : time.Duration
+		{field} - clock : clock.Clock
+		{field} - started, stopped : bool
+		{field} - startedLock : sync.Mutex
+		{field} - blockDeltas : sync.Mutex
+		{field} - watchErrorHandler : WatchErrorHandler
+		{field} - transform : TransformFunc
+		..method..
+		{method} + AddEventHandler(handler ResourceEventHandler) (ResourceEventHandlerRegistration, error)
+		{method} + AddEventHandlerWithResyncPeriod(handler ResourceEventHandler, resyncPeriod time.Duration) (ResourceEventHandlerRegistration, error)
+		{method} + AddIndexers(indexers Indexers) error
+		{method} + GetController() Controller
+		{method} + GetIndexer() Indexer
+		{method} + GetStore() Store
+		{method} + HandleDeltas(obj interface{}, isInInitialList bool) error
+		{method} + HasStarted() bool
+		{method} + HasSynced() bool
+		{method} + IsStopped() bool
+		{method} + LastSyncResourceVersion() string
+		{method} + OnAdd(obj interface{}, isInInitialList bool)
+		{method} + OnDelete(old interface{})
+		{method} + OnUpdate(old, new interface{})
+		{method} + RemoveEventHandler(handle ResourceEventHandlerRegistration) error
+		{method} + Run(stopCh <-chan struct{})
+		{method} + SetTransform(handler TransformFunc) error
+		{method} + SetWatchErrorHandler(handler WatchErrorHandler) error
+	}
+
+	cache.SharedIndexInformer <|.. cache.sharedIndexInformer : 实现
+    cache.sharedIndexInformer::controller *--> cache.Controller : 使用
+
+    note right of cache.sharedIndexInformer::objectType
+        表示当前Informer期望关注的类型，主要是GVK信息
+    end note
+    note right of cache.sharedIndexInformer::resyncCheckPeriod
+        reflector的resync计时器计时间隔，通知所有的listener执行resync
+    end note
+
+    class cache.sharedProcessor {
+		..field..
+		{field} - listenersStarted : bool
+		{field} - listenersLock : sync.RWMutex
+		{field} - listeners : map[*processorListener]bool
+		{field} - clock : clock.Clock
+		{field} - wg : wait.Group
+		..method..
+		{method} - addListener(listener *processorListener) ResourceEventHandlerRegistration
+		{method} - distribute(obj interface{}, sync bool)
+		{method} - getListener(registration ResourceEventHandlerRegistration) *processorListener
+		{method} - removeListener(handle ResourceEventHandlerRegistration) error
+		{method} - resyncCheckPeriodChanged(resyncCheckPeriod time.Duration)
+		{method} - run(stopCh <-chan struct{})
+		{method} - shouldResync() bool
+	}
+
+	cache.sharedIndexInformer::sharedProcessor *--> cache.sharedProcessor : 使用
+
+    class cache.processorListener {
+        ..field..
+        {field} - nextCh : chan interface{}
+        {field} - addCh : chan interface{}
+        {field} - handler : ResourceEventHandler
+        {field} - syncTracker : *synctrack.SingleFileTracker
+        {field} - pendingNotifications : buffer.RingGrowing
+        {field} - requestedResyncPeriod : time.Duration
+        {field} - resyncPeriod : time.Duration
+        {field} - nextResync : time.Time
+        {field} - resyncLock : sync.Mutex
+        ..method..
+        {method} + HasSynced() bool
+        {method} - add(notification interface{})
+        {method} - determineNextResync(now time.Time)
+        {method} - pop()
+        {method} - run()
+        {method} - setResyncPeriod(resyncPeriod time.Duration)
+        {method} - shouldResync(now time.Time) bool
+        ..constructor..
+        {method} - newProcessListener(handler ResourceEventHandler, requestedResyncPeriod, resyncPeriod time.Duration, now time.Time, bufferSize int, hasSynced func() bool) *processorListener
+    }
+
+    note right of cache.processorListener::handler
+        核心属性
+    end note
+
+    cache.sharedProcessor::listeners *--> cache.processorListener : 使用
+
+    interface informers.SharedInformerFactory {
+ 		..supper..
+ 		{static} internalinterfaces.SharedInformerFactory
+ 		..method..
+ 		{method} + Start(stopCh <-chan struct{})
+ 		{method} + Shutdown()
+ 		{method} + WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
+ 		{method} + ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
+ 		{method} + InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
+ 		{method} + Admissionregistration() admissionregistration.Interface
+ 		{method} + Internal() apiserverinternal.Interface
+ 		{method} + Apps() apps.Interface
+ 		{method} + Autoscaling() autoscaling.Interface
+ 		{method} + Batch() batch.Interface
+ 		{method} + Certificates() certificates.Interface
+ 		{method} + Coordination() coordination.Interface
+ 		{method} + Core() core.Interface
+ 		{method} + Discovery() discovery.Interface
+ 		{method} + Events() events.Interface
+ 		{method} + Extensions() extensions.Interface
+ 		{method} + Flowcontrol() flowcontrol.Interface
+ 		{method} + Networking() networking.Interface
+ 		{method} + Node() node.Interface
+ 		{method} + Policy() policy.Interface
+ 		{method} + Rbac() rbac.Interface
+ 		{method} + Resource() resource.Interface
+ 		{method} + Scheduling() scheduling.Interface
+ 		{method} + Storage() storage.Interface
+ 		{method} + Storagemigration() storagemigration.Interface
+ 	}
+
+    interface internalinterfaces.SharedInformerFactory {
+        ..method..
+        {method} + Start(stopCh <-chan struct{})
+        {method} + InformerFor(obj runtime.Object, newFunc NewInformerFunc) cache.SharedIndexInformer
+    }
+
+    internalinterfaces.SharedInformerFactory <|-- informers.SharedInformerFactory :继承
+
+    interface informers.GenericInformer {
+        ..method..
+        {method} + Informer() cache.SharedIndexInformer
+        {method} + Lister() cache.GenericLister
+    }
+
+
+'    class informers.genericInformer {
+'        ..field..
+'        {field} - informer : cache.SharedIndexInformer
+'        {field} - resource : schema.GroupResource
+'        ..method..
+'        {method} + Informer() cache.SharedIndexInformer
+'        {method} + Lister() cache.GenericLister
+'    }
+
+    informers.SharedInformerFactory::ForResource *--> informers.GenericInformer : 使用
+    informers.SharedInformerFactory::Informer *--> cache.SharedIndexInformer : 使用
+    interface apps.Interface {
+        ..method..
+        {method} + V1() v1.Interface
+        {method} + V1beta1() v1beta1.Interface
+        {method} + V1beta2() v1beta2.Interface
+    }
+
+    informers.SharedInformerFactory::Apps *--> apps.Interface : 使用
+
+    interface v1.Interface {
+        ..method..
+        {method} + ControllerRevisions() ControllerRevisionInformer
+        {method} + DaemonSets() DaemonSetInformer
+        {method} + Deployments() DeploymentInformer
+        {method} + ReplicaSets() ReplicaSetInformer
+        {method} + StatefulSets() StatefulSetInformer
+    }
+
+    apps.Interface::V1 *--> v1.Interface : 使用
+    v1.Interface::Deployments *--> v1.DeploymentInformer :使用
+'    interface v1.DeploymentInformer {
+'        ..method..
+'        {method} + Informer() cache.SharedIndexInformer
+'        {method} + Lister() v1.DeploymentLister
+'    }
+@enduml
